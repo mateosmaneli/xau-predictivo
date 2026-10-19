@@ -1,4 +1,4 @@
-"""XAU Predictivo 3.0 — educational research only."""
+"""XAU Predictivo 3.1 — educational research only."""
 import io
 from datetime import datetime, timezone
 import numpy as np
@@ -14,8 +14,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
 
-st.set_page_config(page_title="XAU Predictivo 3.0", layout="wide")
-st.title("XAU Predictivo 3.0 · Laboratorio cuantitativo")
+st.set_page_config(page_title="XAU Predictivo 3.1", layout="wide")
+st.title("XAU Predictivo 3.1 · Laboratorio cuantitativo")
 st.warning("INVESTIGACIÓN / PAPER TRADING. GC=F es un futuro continuo, NO XAU/USD spot ni el CFD de Revolut. Sin costes CFD ni datos punto-en-el-tiempo auditados. No utilizar como señal de inversión.")
 SERIES = {"DGS10":"Bono nominal EE. UU. 10 años (%)", "DFII10":"Bono real EE. UU. 10 años (%)", "DTWEXBGS":"Dólar amplio ponderado por comercio", "VIXCLS":"VIX (volatilidad acciones)"}
 
@@ -33,7 +33,7 @@ def load_data():
     status=[]
     for code, label in SERIES.items():
         try:
-            r=requests.get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={code}", timeout=30, headers={"User-Agent":"xau-predictivo/3.0 educational research"})
+            r=requests.get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={code}", timeout=(4, 7), headers={"User-Agent":"xau-predictivo/3.0 educational research"})
             r.raise_for_status()
             s=pd.read_csv(io.StringIO(r.text))
             if "observation_date" in s.columns: datecol="observation_date"
@@ -52,7 +52,7 @@ def load_data():
             status.append({"Fuente":"FRED", "Serie":code,"Descripción":label,"Última fecha":"—", "Observaciones":0,"Estado":"ERROR: "+str(exc)[:85]})
     return df, pd.DataFrame(status)
 
-def make_features(data):
+def make_features(data, include_macro=False):
     f=pd.DataFrame(index=data.index)
     gold=data.gold
     daily=np.log(gold/gold.shift(1))
@@ -60,10 +60,11 @@ def make_features(data):
     for n in (5,10,20,60): f[f"oro_dist_media_{n}"]=gold/gold.rolling(n).mean()-1
     for n in (5,10,20): f[f"oro_vol_{n}"]=daily.rolling(n).std()
     # Conservative two-GOLD-session publication lag; not a substitute for actual historical release vintages.
-    for code in SERIES:
-        s=data[code].ffill().shift(2)
-        f[f"{code}_nivel"]=s
-        f[f"{code}_cambio_5"]=s-s.shift(5)
+    if include_macro:
+        for code in SERIES:
+            s=data[code].ffill().shift(2)
+            f[f"{code}_nivel"]=s
+            f[f"{code}_cambio_5"]=s-s.shift(5)
     return f.replace([np.inf,-np.inf],np.nan)
 
 def models():
@@ -135,10 +136,15 @@ st.caption("FRED: fecha de observación, NO hora real de publicación. DTWEXBGS 
 st.line_chart(data.gold.tail(250))
 missing=[x for x in SERIES if data[x].notna().sum()<400]
 if missing:
-    st.error("Series insuficientes: "+", ".join(missing)+". No se entrenará un modelo con variables ausentes.")
-    st.stop()
+    st.warning("Datos macroeconómicos insuficientes: " + ", ".join(missing) + ". Se utilizará el modelo técnico; no se imputarán variables macroeconómicas inexistentes.")
+    include_macro=False
+else:
+    include_macro=st.radio("Modalidad de análisis", [False, True], format_func=lambda x: "Multivariable (oro + macro)" if x else "Técnico (solo oro)", horizontal=True, index=1)
+    if include_macro:
+        st.caption("La modalidad macro utiliza un retraso aproximado de 2 sesiones; no garantiza reconstrucción histórica exacta de publicación.")
+mode="macro" if include_macro else "tecnico"
 
-X=make_features(data)
+X=make_features(data, include_macro=include_macro)
 y=np.log(data.gold.shift(-horizon)/data.gold).rename("target")
 table=X.join(y).dropna()
 forecast_X=X.dropna()
@@ -147,6 +153,7 @@ if len(table)<650 or forecast_X.empty:
     st.stop()
 
 st.subheader("2. Validación temporal walk-forward")
+st.info("Modalidad activa: " + ("Multivariable" if include_macro else "Técnica") + ". Las estimaciones son experimentales y no constituyen señales de trading.")
 st.write(f"Observaciones entrenables: **{len(table):,}** · Variables predictoras: **{len(X.columns)}** · Horizonte: **{horizon} sesiones**.")
 st.caption("Cuatro pruebas cronológicas de ventana expansiva. Se excluyen h observaciones antes de cada prueba para evitar que los objetivos de entrenamiento alcancen el periodo de test. Hiperparámetros prefijados, sin optimización sobre el test.")
 if st.button("Calcular modelos y evaluación",type="primary"):
@@ -161,12 +168,12 @@ if st.button("Calcular modelos y evaluación",type="primary"):
                 val=float(m.predict(latest[X.columns])[0])
                 forecasts.append({"Modelo":name,"Retorno previsto (%)":100*val,"Precio proyectado GC=F (USD)":float(data.gold.loc[latest.index[-1]]*np.exp(val))})
             forecasts=pd.DataFrame(forecasts)
-            st.session_state["evaluation"]={"metrics":metrics,"history":history,"forecasts":forecasts,"horizon":horizon,"date":str(latest.index[-1].date())}
+            st.session_state["evaluation"]={"metrics":metrics,"history":history,"forecasts":forecasts,"horizon":horizon,"date":str(latest.index[-1].date()),"mode":mode}
         except Exception as exc:
             st.error(f"Fallo de entrenamiento: {exc}")
 
 out=st.session_state.get("evaluation")
-if out and out["horizon"]==horizon and out["date"]==str(forecast_X.index[-1].date()):
+if out and out["horizon"]==horizon and out["date"]==str(forecast_X.index[-1].date()) and out.get("mode")==mode:
     metrics=out["metrics"]
     st.dataframe(metrics.style.format({"MAE (%)":"{:.3f}","RMSE (%)":"{:.3f}","Acierto direccional (%)":"{:.1f}"},na_rep="No aplica"),hide_index=True,use_container_width=True)
     baseline=float(metrics.loc[metrics.Modelo=="Sin cambio","MAE (%)"].iloc[0])
