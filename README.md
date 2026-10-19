@@ -1,9 +1,14 @@
-# XAU Predictivo 3.1 — Corrección de disponibilidad
+# XAU Predictivo 3.2
 
-Corrige la detención completa del panel cuando fallan las cuatro fuentes macroeconómicas FRED. En ausencia de datos macroeconómicos suficientes se habilita el modo técnico (solo GC=F). Si FRED funciona, se puede seleccionar modo técnico o multivariable.
+Aplicación Streamlit de investigación cuantitativa sobre GC=F, que NO es XAU/USD spot ni el CFD de Revolut.
 
-## Instalación en Streamlit
-Sustituir `app.py`, `requirements.txt` y `README.md` en la raíz del repositorio de GitHub. Streamlit reconstruirá la aplicación automáticamente. Seleccionar horizonte y pulsar «Calcular modelos y evaluación».
+## Mejoras
+- Descarga FRED con tiempos de espera y alternativas Yahoo para DGS10 (^TNX), DTWEXBGS (DX-Y.NYB, NO equivalente) y VIXCLS (^VIX). DFII10 no tiene sustituto equivalente validado y no se inventa.
+- Modo técnico siempre disponible y modo con indicadores externos cuando hay cobertura suficiente.
+- Ridge, Random Forest, XGBoost y referencia sin cambio, validación temporal y descarga CSV.
 
-## Limitaciones
-Los datos del oro son futuros GC=F, no XAU/USD spot ni precios ejecutables de CFD Revolut. El modelo no incluye costes ni verificación punto-en-el-tiempo de los datos macroeconómicos. La modalidad técnica no usa variables macroeconómicas. La predicción no está validada para operaciones reales.
+## Publicar
+Subir `app.py`, `requirements.txt` y `README.md` a la raíz de `mateosmaneli/xau-predictivo`, reemplazando los existentes. Streamlit actualiza la app tras el commit.
+
+## Advertencias
+La conexión a Yahoo/FRED no está garantizada. No se ha validado aquí una descarga en vivo. La versión no certifica información punto-en-el-tiempo, no calcula costes CFD, no registra predicciones diarias persistentes y no produce señales de inversión operables.
